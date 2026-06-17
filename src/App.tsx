@@ -44,7 +44,14 @@ function App() {
             >
               智慧倉儲
             </span>
-            <div style={{ display: "flex", gap: "4px" }}>
+            <div
+              style={{
+                display: "flex",
+                gap: "8px",
+                overflowX: "auto",
+                whiteSpace: "nowrap",
+              }}
+            >
               {[
                 { to: "/", label: "Dashboard" },
                 { to: "/items", label: "商品管理" },
