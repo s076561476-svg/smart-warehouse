@@ -6,6 +6,7 @@ import StockLogs from "./pages/StockLogs";
 import Dashboard from "./pages/Dashboard";
 import Login from "./pages/Login";
 import Slots from "./pages/Slots";
+import { useState } from "react";
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const user = localStorage.getItem("user");
@@ -17,11 +18,51 @@ function App() {
   const user = localStorage.getItem("user");
 
   const currentUser = JSON.parse(user || "{}");
+  const isMobile = window.innerWidth < 768;
+  const [menuOpen, setMenuOpen] = useState(false);
   console.log(currentUser);
 
   return (
     <div>
-      {user && (
+      {user && isMobile && (
+        <div
+          style={{
+            background: "#0f172a",
+            color: "white",
+            padding: "12px",
+          }}
+        >
+          <button
+            onClick={() => setMenuOpen(!menuOpen)}
+            style={{
+              background: "none",
+              border: "none",
+              color: "white",
+              fontSize: "24px",
+            }}
+          >
+            ☰
+          </button>
+
+          {menuOpen && (
+            <div
+              style={{
+                display: "flex",
+                flexDirection: "column",
+                gap: "12px",
+                marginTop: "12px",
+              }}
+            >
+              <Link to="/">Dashboard</Link>
+              <Link to="/items">商品管理</Link>
+              <Link to="/inventory">庫存查詢</Link>
+              <Link to="/stockin">庫存異動</Link>
+              <Link to="/logs">異動紀錄</Link>
+            </div>
+          )}
+        </div>
+      )}
+      {user && !isMobile && (
         <nav
           style={{
             display: "flex",
@@ -33,12 +74,21 @@ function App() {
             borderBottom: "1px solid #1e293b",
           }}
         >
-          <div style={{ display: "flex", alignItems: "center", gap: "32px" }}>
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: "12px",
+              flexWrap: "wrap",
+            }}
+          >
             <span
               style={{
                 color: "#38bdf8",
                 fontWeight: 600,
-                fontSize: "15px",
+                fontSize: window.innerWidth < 768 ? "20px" : "48px",
+                maxWidth: "100%",
+                overflowX: "hidden",
                 letterSpacing: "0.5px",
               }}
             >
@@ -107,6 +157,10 @@ function App() {
                 style={{
                   color: "#cbd5e1",
                   fontSize: "14px",
+                  maxWidth: "80px",
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                  whiteSpace: "nowrap",
                 }}
               >
                 {currentUser.display_name}

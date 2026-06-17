@@ -89,8 +89,13 @@ function Dashboard() {
     <div style={{ padding: "20px" }}>
       <h1
         style={{
+          fontSize: window.innerWidth < 768 ? "32px" : "64px",
+
           textAlign: "center",
-          marginBottom: "30px",
+          marginBottom: "20px",
+
+          wordBreak: "break-word",
+          lineHeight: "1.2",
         }}
       >
         智慧倉儲管理儀表板
