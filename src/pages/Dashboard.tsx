@@ -89,7 +89,7 @@ function Dashboard() {
     <div style={{ padding: "20px" }}>
       <h1
         style={{
-          fontSize: window.innerWidth < 768 ? "32px" : "64px",
+          fontSize: window.innerWidth < 768 ? "24px" : "42px",
 
           textAlign: "center",
           marginBottom: "20px",
