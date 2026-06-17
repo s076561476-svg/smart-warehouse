@@ -86,7 +86,7 @@ function App() {
               style={{
                 color: "#38bdf8",
                 fontWeight: 600,
-                fontSize: window.innerWidth < 768 ? "20px" : "48px",
+                fontSize: "18px",
                 maxWidth: "100%",
                 overflowX: "hidden",
                 letterSpacing: "0.5px",
@@ -98,6 +98,7 @@ function App() {
               style={{
                 display: "flex",
                 gap: "8px",
+
                 overflowX: "auto",
                 whiteSpace: "nowrap",
               }}
