@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { supabase } from "../services/supabase";
+import qrcode from "../assets/qrcode.png";
 
 function Login() {
   const [account, setAccount] = useState("");
@@ -13,7 +14,10 @@ function Login() {
       .eq("password", password)
       .single();
 
-    if (error || !data) {
+    console.log("data=", data);
+    console.log("error=", error);
+
+    if (error || data.length === 0) {
       alert("帳號或密碼錯誤");
       return;
     }
@@ -57,6 +61,24 @@ function Login() {
       <br />
 
       <button onClick={login}>登入</button>
+      <div
+        style={{
+          marginTop: "20px",
+          textAlign: "center",
+        }}
+      >
+        <img
+          src={qrcode}
+          alt="系統QR Code"
+          style={{
+            width: "180px",
+            height: "180px",
+            border: "1px solid red",
+          }}
+        />
+
+        <p>手機掃描進入系統</p>
+      </div>
     </div>
   );
 }

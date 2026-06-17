@@ -1,0 +1,1 @@
+Copy-Item "C:\Users\s0765\Downloads\qrcode.jpg" -Destination "src\assets\qrcode.png" -Force
