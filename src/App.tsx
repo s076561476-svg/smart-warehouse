@@ -87,8 +87,6 @@ function App() {
                 color: "#38bdf8",
                 fontWeight: 600,
                 fontSize: "18px",
-                maxWidth: "100%",
-                overflowX: "hidden",
                 letterSpacing: "0.5px",
               }}
             >
