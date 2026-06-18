@@ -376,7 +376,7 @@ function Items() {
         <div
           style={{
             display: "grid",
-            gridTemplateColumns: isMobile ? "1fr" : "repeat(4, 1fr)",
+            gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
             gap: "20px",
           }}
         >
@@ -433,7 +433,7 @@ function Items() {
           <div
             style={{
               display: "grid",
-              gridTemplateColumns: isMobile ? "1fr" : "repeat(4, 1fr)",
+              gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
               gap: "20px",
               marginBottom: "20px",
             }}
