@@ -423,7 +423,7 @@ function Items() {
         {/* 第二張圖的輸入表單區塊 */}
         <div
           style={{
-            padding: "25px",
+            padding: isMobile ? "15px" : "25px",
             border: "1px solid #eee",
             borderRadius: "8px",
             backgroundColor: "#fafafa",
@@ -486,7 +486,13 @@ function Items() {
               style={{ display: "flex", flexDirection: "column", gap: "8px" }}
             >
               <label
-                style={{ fontSize: "13px", fontWeight: "bold", color: "#555" }}
+                style={{
+                  width: "100%",
+                  padding: "10px",
+                  borderRadius: "4px",
+                  border: "1px solid #ccc",
+                  boxSizing: "border-box",
+                }}
               >
                 SKU 編號
               </label>
@@ -507,7 +513,13 @@ function Items() {
               style={{ display: "flex", flexDirection: "column", gap: "8px" }}
             >
               <label
-                style={{ fontSize: "13px", fontWeight: "bold", color: "#555" }}
+                style={{
+                  width: "100%",
+                  padding: "10px",
+                  borderRadius: "4px",
+                  border: "1px solid #ccc",
+                  boxSizing: "border-box",
+                }}
               >
                 條碼
               </label>
@@ -537,6 +549,7 @@ function Items() {
             <button
               onClick={() => document.getElementById("image-upload")?.click()}
               style={{
+                width: isMobile ? "100%" : "auto",
                 padding: "10px 20px",
                 cursor: "pointer",
                 backgroundColor: "#8c8c8c",
@@ -572,6 +585,7 @@ function Items() {
                   color: "white",
                   border: "none",
                   borderRadius: "4px",
+                  width: isMobile ? "100%" : "auto",
                 }}
               >
                 📥 Excel匯入
@@ -597,6 +611,7 @@ function Items() {
                   border: "none",
                   borderRadius: "4px",
                   fontWeight: "bold",
+                  width: isMobile ? "100%" : "auto",
                 }}
               >
                 {editingId ? "💾 更新商品" : "➕ 新增商品"}
