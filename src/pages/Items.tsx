@@ -357,7 +357,7 @@ function Items() {
           maxWidth: "1200px",
           margin: "0 auto",
           backgroundColor: "#fff",
-          padding: "30px",
+          padding: isMobile ? "15px" : "30px",
           borderRadius: "8px",
           boxShadow: "0 2px 15px rgba(0,0,0,0.05)",
         }}
@@ -469,13 +469,15 @@ function Items() {
               </label>
               <input
                 type="text"
-                placeholder="請輸入商品名稱"
+                placeholder="輸入名稱搜尋..."
                 value={itemName}
                 onChange={(e) => setItemName(e.target.value)}
                 style={{
+                  width: "100%",
                   padding: "10px",
                   borderRadius: "4px",
                   border: "1px solid #ccc",
+                  boxSizing: "border-box",
                 }}
               />
             </div>
