@@ -64,6 +64,8 @@ function Inventory() {
         style={{
           marginBottom: "24px",
           display: "flex",
+          flexDirection: window.innerWidth < 768 ? "column" : "row",
+          gap: "12px",
           justifyContent: "space-between",
           alignItems: "flex-start",
         }}
@@ -115,7 +117,8 @@ function Inventory() {
       <div
         style={{
           display: "grid",
-          gridTemplateColumns: "repeat(4, 1fr)",
+          gridTemplateColumns:
+            window.innerWidth < 768 ? "repeat(2,1fr)" : "repeat(4,1fr)",
           gap: "12px",
           marginBottom: "24px",
         }}
@@ -193,6 +196,8 @@ function Inventory() {
             padding: "14px 20px",
             borderBottom: "1px solid #f1f5f9",
             display: "flex",
+            flexDirection: window.innerWidth < 768 ? "column" : "row",
+            gap: "12px",
             justifyContent: "space-between",
             alignItems: "center",
             background: "#f8fafc",

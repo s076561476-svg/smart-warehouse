@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { supabase } from "../services/supabase";
 
 function Slots() {
+  const isMobile = window.innerWidth < 768;
   const [slots, setSlots] = useState<any[]>([]);
 
   useEffect(() => {
@@ -29,13 +30,25 @@ function Slots() {
   }
 
   return (
-    <div style={{ padding: "20px" }}>
-      <h1>儲位管理</h1>
+    <div
+      style={{
+        padding: isMobile ? "10px" : "20px",
+      }}
+    >
+      <h1
+        style={{
+          textAlign: "center",
+          fontSize: isMobile ? "24px" : "40px",
+          marginBottom: "20px",
+        }}
+      >
+        儲位管理
+      </h1>
 
       <div
         style={{
           display: "grid",
-          gridTemplateColumns: "repeat(4, 1fr)",
+          gridTemplateColumns: isMobile ? "repeat(2, 1fr)" : "repeat(4, 1fr)",
           gap: "15px",
         }}
       >
@@ -57,7 +70,14 @@ function Slots() {
 
               {stock ? (
                 <>
-                  <p>{stock.items?.name}</p>
+                  <p
+                    style={{
+                      wordBreak: "break-word",
+                      fontSize: isMobile ? "12px" : "14px",
+                    }}
+                  >
+                    {stock.items?.name}
+                  </p>
                   <p>庫存：{stock.qty}</p>
                 </>
               ) : (

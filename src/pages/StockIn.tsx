@@ -55,6 +55,7 @@ function StockIn() {
   const selectedSlot = slots.find((slot) => slot.id === slotId);
 
   const estimatedQty = action === "STOCK_IN" ? qty : -qty;
+  const isMobile = window.innerWidth < 768;
 
   // =========================
   // 頁面開啟時執行
@@ -223,7 +224,11 @@ function StockIn() {
 
       {/* ✅ 左右兩欄：表單 + 異動預覽 */}
       <div
-        style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "30px" }}
+        style={{
+          display: "grid",
+          gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr",
+          gap: "30px",
+        }}
       >
         {/* 左：表單 */}
         <div
@@ -235,7 +240,16 @@ function StockIn() {
           }}
         >
           <p>商品</p>
-          <select value={itemId} onChange={(e) => setItemId(e.target.value)}>
+          <select
+            value={itemId}
+            onChange={(e) => setItemId(e.target.value)}
+            style={{
+              width: "100%",
+              padding: "10px",
+              marginBottom: "10px",
+              boxSizing: "border-box",
+            }}
+          >
             <option value="">請選擇商品</option>
             {items.map((item) => (
               <option key={item.id} value={item.id}>
@@ -245,7 +259,16 @@ function StockIn() {
           </select>
 
           <p>儲位</p>
-          <select value={slotId} onChange={(e) => setSlotId(e.target.value)}>
+          <select
+            value={slotId}
+            onChange={(e) => setSlotId(e.target.value)}
+            style={{
+              width: "100%",
+              padding: "10px",
+              marginBottom: "10px",
+              boxSizing: "border-box",
+            }}
+          >
             <option value="">請選擇儲位</option>
             {slots.map((slot) => (
               <option key={slot.id} value={slot.id}>
@@ -255,7 +278,16 @@ function StockIn() {
           </select>
 
           <p>異動類型</p>
-          <select value={action} onChange={(e) => setAction(e.target.value)}>
+          <select
+            value={action}
+            onChange={(e) => setAction(e.target.value)}
+            style={{
+              width: "100%",
+              padding: "10px",
+              marginBottom: "10px",
+              boxSizing: "border-box",
+            }}
+          >
             <option value="STOCK_IN">入庫</option>
             <option value="STOCK_OUT">出庫</option>
           </select>
@@ -265,6 +297,11 @@ function StockIn() {
             type="number"
             value={qty}
             onChange={(e) => setQty(Number(e.target.value))}
+            style={{
+              width: "100%",
+              padding: "10px",
+              boxSizing: "border-box",
+            }}
           />
 
           <br />
@@ -297,7 +334,7 @@ function StockIn() {
       <div
         style={{
           display: "grid",
-          gridTemplateColumns: "repeat(4, 1fr)",
+          gridTemplateColumns: isMobile ? "repeat(2, 1fr)" : "repeat(4, 1fr)",
           gap: "15px",
           marginTop: "20px",
         }}
