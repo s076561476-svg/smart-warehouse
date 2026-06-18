@@ -442,9 +442,13 @@ function Items() {
               style={{ display: "flex", flexDirection: "column", gap: "8px" }}
             >
               <label
-                style={{ fontSize: "13px", fontWeight: "bold", color: "#555" }}
+                style={{
+                  fontSize: "13px",
+                  fontWeight: "bold",
+                  color: "#555",
+                }}
               >
-                🔍 搜尋商品
+                🔍 關鍵字
               </label>
               <input
                 type="text"
@@ -465,7 +469,7 @@ function Items() {
               <label
                 style={{ fontSize: "13px", fontWeight: "bold", color: "#555" }}
               >
-                商品名稱
+                🏷 商品名稱
               </label>
               <input
                 type="text"
@@ -487,14 +491,12 @@ function Items() {
             >
               <label
                 style={{
-                  width: "100%",
-                  padding: "10px",
-                  borderRadius: "4px",
-                  border: "1px solid #ccc",
-                  boxSizing: "border-box",
+                  fontSize: "13px",
+                  fontWeight: "bold",
+                  color: "#555",
                 }}
               >
-                SKU 編號
+                🔢 SKU 編號
               </label>
               <input
                 type="text"
@@ -514,14 +516,12 @@ function Items() {
             >
               <label
                 style={{
-                  width: "100%",
-                  padding: "10px",
-                  borderRadius: "4px",
-                  border: "1px solid #ccc",
-                  boxSizing: "border-box",
+                  fontSize: "13px",
+                  fontWeight: "bold",
+                  color: "#555",
                 }}
               >
-                條碼
+                📦 條碼
               </label>
               <input
                 type="text"
