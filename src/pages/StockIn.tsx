@@ -176,8 +176,8 @@ function StockIn() {
       {/* 上方統計卡片 */}
       <div
         style={{
-          display: "flex",
-          justifyContent: "center",
+          display: "grid",
+          gridTemplateColumns: "repeat(auto-fit,minmax(180px,1fr))",
           gap: "20px",
           marginBottom: "30px",
         }}
