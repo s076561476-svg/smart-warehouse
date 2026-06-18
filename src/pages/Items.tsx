@@ -15,6 +15,7 @@ function Items() {
   const [previewUrl, setPreviewUrl] = useState("");
   const [editingId, setEditingId] = useState("");
   const [searchText, setSearchText] = useState("");
+  const isMobile = window.innerWidth < 768;
   useEffect(() => {
     fetchItems();
   }, []);
@@ -375,13 +376,8 @@ function Items() {
         <div
           style={{
             display: "grid",
-            gridTemplateColumns: "repeat(4, 1fr)",
+            gridTemplateColumns: isMobile ? "1fr" : "repeat(4, 1fr)",
             gap: "20px",
-            marginBottom: "30px",
-            padding: "20px",
-            backgroundColor: "#fff",
-            border: "1px solid #eee",
-            borderRadius: "8px",
           }}
         >
           <div style={{ textAlign: "center" }}>
@@ -437,7 +433,7 @@ function Items() {
           <div
             style={{
               display: "grid",
-              gridTemplateColumns: "repeat(4, 1fr)",
+              gridTemplateColumns: isMobile ? "1fr" : "repeat(4, 1fr)",
               gap: "20px",
               marginBottom: "20px",
             }}
@@ -531,9 +527,9 @@ function Items() {
           <div
             style={{
               display: "flex",
-              justifyContent: "center",
+              flexDirection: isMobile ? "column" : "row",
+              alignItems: "center",
               gap: "15px",
-              marginTop: "10px",
             }}
           >
             <button
