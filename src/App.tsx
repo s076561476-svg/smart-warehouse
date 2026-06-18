@@ -58,6 +58,22 @@ function App() {
               <Link to="/inventory">庫存查詢</Link>
               <Link to="/stockin">庫存異動</Link>
               <Link to="/logs">異動紀錄</Link>
+              <button
+                onClick={() => {
+                  localStorage.removeItem("user");
+                  window.location.href = "/login";
+                }}
+                style={{
+                  background: "#ef4444",
+                  color: "white",
+                  border: "none",
+                  padding: "10px",
+                  borderRadius: "6px",
+                  cursor: "pointer",
+                }}
+              >
+                登出
+              </button>
             </div>
           )}
         </div>
