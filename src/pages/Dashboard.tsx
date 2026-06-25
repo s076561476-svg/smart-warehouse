@@ -144,6 +144,7 @@ function Dashboard() {
       `,
       )
       .order("slot_code", { ascending: true });
+    console.log("儲位概況資料 slotsData =", slotsData);
 
     if (slotsError) {
       console.error("讀取儲位概況失敗：", slotsError);
