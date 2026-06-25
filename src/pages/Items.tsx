@@ -1,762 +1,755 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "../services/supabase";
 import * as XLSX from "xlsx";
 
+type Item = {
+  id: string;
+  name: string;
+  sku: string | null;
+  barcode: string | null;
+  image_url: string | null;
+};
+
 function Items() {
-  const currentUser = JSON.parse(localStorage.getItem("user") || "{}");
+  /* =========================
+     基本 state
+  ========================= */
+  const [items, setItems] = useState<Item[]>([]);
+  const [loading, setLoading] = useState(false);
 
-  const [items, setItems] = useState<any[]>([]);
-
+  /* =========================
+     表單 state
+  ========================= */
   const [itemName, setItemName] = useState("");
   const [sku, setSku] = useState("");
   const [barcode, setBarcode] = useState("");
+  const [imageUrl, setImageUrl] = useState("");
 
-  const [imageFile, setImageFile] = useState<File | null>(null);
-  const [previewUrl, setPreviewUrl] = useState("");
-  const [editingId, setEditingId] = useState("");
+  /* =========================
+     編輯模式
+  ========================= */
+  const [editingId, setEditingId] = useState<string | null>(null);
+
+  /* =========================
+     搜尋
+  ========================= */
   const [searchText, setSearchText] = useState("");
+
+  /* =========================
+     Excel 匯入 input
+  ========================= */
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+
   const isMobile = window.innerWidth < 768;
+
+  /* =========================
+     初始載入
+  ========================= */
   useEffect(() => {
     fetchItems();
   }, []);
 
+  /* =========================
+     讀取商品
+  ========================= */
   async function fetchItems() {
+    setLoading(true);
+
     const { data, error } = await supabase
       .from("items")
-      .select(
-        `
-      *,
-      inventory (
-  id,
-  qty,
-  slots (
-    slot_code
-  )
-)
-    `,
-      )
-      .order("name");
+      .select("id, name, sku, barcode, image_url")
+      .order("id", { ascending: false });
 
     if (error) {
-      console.error(error);
-      alert("入庫失敗");
+      console.error("讀取商品失敗：", error);
+      alert("讀取商品失敗");
+      setLoading(false);
       return;
     }
 
-    setItems(data || []);
-  }
-  async function importExcel(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-
-    if (!file) return;
-
-    const reader = new FileReader();
-
-    reader.onload = async (event) => {
-      const data = event.target?.result;
-
-      const workbook = XLSX.read(data, {
-        type: "binary",
-      });
-
-      const sheetName = workbook.SheetNames[0];
-
-      const sheet = workbook.Sheets[sheetName];
-
-      const rows: any[] = XLSX.utils.sheet_to_json(sheet);
-
-      console.log(rows);
-
-      const itemsToInsert = rows.map((row) => ({
-        name: row["商品名稱"],
-        sku: row["SKU"],
-        barcode: row["條碼"],
-      }));
-
-      const { error } = await supabase.from("items").insert(itemsToInsert);
-
-      if (error) {
-        console.error(error);
-        alert("匯入失敗");
-        return;
-      }
-
-      alert(`成功匯入 ${itemsToInsert.length} 筆商品`);
-
-      fetchItems();
-    };
-
-    reader.readAsBinaryString(file);
+    setItems((data as Item[]) || []);
+    setLoading(false);
   }
 
-  async function addItem() {
-    if (!itemName.trim()) {
+  /* =========================
+     清空表單
+  ========================= */
+  function resetForm() {
+    setItemName("");
+    setSku("");
+    setBarcode("");
+    setImageUrl("");
+    setEditingId(null);
+  }
+
+  /* =========================
+     新增 / 更新商品
+  ========================= */
+  async function addOrUpdateItem() {
+    const name = itemName.trim();
+    const finalSku = sku.trim();
+    const finalBarcode = barcode.trim();
+    const finalImageUrl = imageUrl.trim();
+
+    if (!name) {
       alert("請輸入商品名稱");
       return;
     }
 
-    let imageUrl = null;
+    // 編輯模式
+    if (editingId) {
+      const { error } = await supabase
+        .from("items")
+        .update({
+          name,
+          sku: finalSku || null,
+          barcode: finalBarcode || null,
+          image_url: finalImageUrl || null,
+        })
+        .eq("id", editingId);
 
-    // 上傳圖片
-    if (imageFile) {
-      const fileName = Date.now() + "-" + imageFile.name;
-
-      const { error: uploadError } = await supabase.storage
-        .from("products")
-        .upload(fileName, imageFile);
-
-      if (uploadError) {
-        console.error(uploadError);
-
-        alert("圖片上傳失敗：" + uploadError.message);
-
+      if (error) {
+        console.error("更新商品失敗：", error);
+        alert("更新商品失敗");
         return;
       }
-      const {
-        data: { publicUrl },
-      } = supabase.storage.from("products").getPublicUrl(fileName);
 
-      imageUrl = publicUrl;
+      alert("商品更新成功");
+      resetForm();
+      fetchItems();
+      return;
+    }
+
+    // 新增前：若 SKU 有填，先檢查是否重複
+    if (finalSku) {
+      const { data: existingSku } = await supabase
+        .from("items")
+        .select("id")
+        .eq("sku", finalSku)
+        .maybeSingle();
+
+      if (existingSku) {
+        alert("此 SKU 已存在，請改用編輯或更換 SKU");
+        return;
+      }
+    }
+
+    // 名稱重複提醒（不擋，只提醒）
+    const { data: sameNameItem } = await supabase
+      .from("items")
+      .select("id")
+      .eq("name", name)
+      .maybeSingle();
+
+    if (sameNameItem) {
+      const confirmAdd = window.confirm(
+        `已存在同名商品「${name}」，仍要繼續新增嗎？`,
+      );
+      if (!confirmAdd) return;
     }
 
     const { error } = await supabase.from("items").insert([
       {
-        name: itemName,
-        sku,
-        barcode,
-        image_url: imageUrl,
+        name,
+        sku: finalSku || null,
+        barcode: finalBarcode || null,
+        image_url: finalImageUrl || null,
       },
     ]);
 
     if (error) {
-      console.error(error);
-      alert("新增失敗");
+      console.error("新增商品失敗：", error);
+      alert("新增商品失敗");
       return;
     }
 
-    alert("新增成功");
-
-    setItemName("");
-    setSku("");
-    setBarcode("");
-    setImageFile(null);
-    setPreviewUrl("");
-
+    alert("商品新增成功");
+    resetForm();
     fetchItems();
   }
-  function editItem(item: any) {
-    setEditingId(item.id);
 
+  /* =========================
+     點擊編輯
+  ========================= */
+  function startEdit(item: Item) {
+    setEditingId(item.id);
     setItemName(item.name || "");
     setSku(item.sku || "");
     setBarcode(item.barcode || "");
-
-    setPreviewUrl(item.image_url || "");
-  }
-  async function updateItem() {
-    let imageUrl = previewUrl;
-
-    // 如果有重新選圖片
-    if (imageFile) {
-      const fileName = Date.now() + "-" + imageFile.name;
-
-      const { error: uploadError } = await supabase.storage
-        .from("products")
-        .upload(fileName, imageFile);
-
-      if (uploadError) {
-        console.error(uploadError);
-
-        alert("圖片上傳失敗：" + uploadError.message);
-
-        return;
-      }
-
-      const {
-        data: { publicUrl },
-      } = supabase.storage.from("products").getPublicUrl(fileName);
-
-      imageUrl = publicUrl;
-    }
-
-    const { error } = await supabase
-      .from("items")
-      .update({
-        name: itemName,
-        sku: sku,
-        barcode: barcode,
-        image_url: imageUrl,
-      })
-      .eq("id", editingId);
-
-    if (error) {
-      console.error(error);
-      alert("更新失敗");
-      return;
-    }
-
-    alert("更新成功");
-
-    setEditingId("");
-    setItemName("");
-    setSku("");
-    setBarcode("");
-
-    setPreviewUrl("");
-    setImageFile(null);
-
-    fetchItems();
-  }
-  async function stockIn(item: any) {
-    // 1. 先檢查是否有現有的庫位
-    const inventoryList = item.inventory || [];
-
-    let targetInventory;
-
-    if (inventoryList.length > 0) {
-      const qty = Number(prompt("請輸入入庫數量"));
-
-      if (!qty || qty <= 0) return;
-
-      targetInventory = inventoryList[0];
-
-      const currentQty = targetInventory.qty || 0;
-
-      const { error } = await supabase
-        .from("inventory")
-        .update({
-          qty: currentQty + qty,
-        })
-        .eq("id", targetInventory.id);
-
-      if (error) {
-        console.error(error);
-        alert("入庫失敗");
-        return;
-      }
-
-      await supabase.from("stock_logs").insert([
-        {
-          item_id: item.id,
-          qty: qty,
-          action: "STOCK_IN",
-        },
-      ]);
-
-      alert("入庫成功");
-      fetchItems();
-      return;
-    } else {
-      // --- 重點：如果沒有庫位，這裡可以改成「建立新庫位」的邏輯 ---
-      const newSlotCode = prompt("請輸入庫位編號 (例如 A-01-01)");
-
-      if (!newSlotCode) return;
-
-      const qty = Number(prompt("請輸入入庫數量"));
-
-      if (!qty || qty <= 0) return;
-
-      // 在這裡加入 Supabase Insert 邏輯來建立新的 inventory 紀錄
-      // ... (新增庫位的程式碼)
-      const { data: slot } = await supabase
-        .from("slots")
-        .select("*")
-        .eq("slot_code", newSlotCode)
-        .single();
-      if (!slot) {
-        alert("庫位不存在");
-        return;
-      }
-
-      const { error } = await supabase.from("inventory").insert([
-        {
-          item_id: item.id,
-          slot_id: slot.id,
-          qty: qty,
-        },
-      ]);
-
-      if (error) {
-        console.error(error);
-        alert("建立庫存失敗");
-        return;
-      }
-
-      alert("入庫成功");
-      fetchItems();
-      return;
-    }
+    setImageUrl(item.image_url || "");
+    window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
-  async function stockOut(item: any) {
-    const qty = Number(prompt("出庫數量"));
-
-    if (!qty || qty <= 0) return;
-
-    const currentQty = item.inventory?.[0]?.qty || 0;
-
-    if (qty > currentQty) {
-      alert("庫存不足");
-      return;
-    }
-
-    const inventoryId = item.inventory?.[0]?.id;
-
-    const { error } = await supabase
-      .from("inventory")
-      .update({
-        qty: currentQty - qty,
-      })
-      .eq("id", inventoryId);
-
-    if (error) {
-      console.error(error);
-      alert("出庫失敗");
-      return;
-    }
-
-    await supabase.from("stock_logs").insert([
-      {
-        item_id: item.id,
-        qty: qty,
-        action: "STOCK_OUT",
-      },
-    ]);
-
-    fetchItems();
-  }
-
-  async function deleteItem(id: string) {
-    const ok = confirm("確定要刪除商品嗎？");
-
+  /* =========================
+     刪除商品
+  ========================= */
+  async function deleteItem(id: string, name: string) {
+    const ok = window.confirm(`確定要刪除商品「${name}」嗎？`);
     if (!ok) return;
 
     const { error } = await supabase.from("items").delete().eq("id", id);
 
     if (error) {
-      console.error(error);
-      alert("刪除失敗");
+      console.error("刪除商品失敗：", error);
+      alert("刪除商品失敗");
       return;
     }
 
+    alert("商品已刪除");
     fetchItems();
   }
 
-  // --- 以下為重新排版後的 UI 部分 ---
+  /* =========================
+     Excel 匯入
+     規則：
+     1. 空白名稱不匯入
+     2. 有 SKU → 優先用 SKU 找舊資料
+     3. 沒 SKU → 用商品名稱找舊資料
+     4. 找到舊資料就更新，找不到就新增
+  ========================= */
+  async function importExcel(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    try {
+      const buffer = await file.arrayBuffer();
+      const workbook = XLSX.read(buffer, { type: "array" });
+      const firstSheetName = workbook.SheetNames[0];
+      const worksheet = workbook.Sheets[firstSheetName];
+
+      const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(worksheet);
+
+      if (!rows.length) {
+        alert("Excel 沒有資料");
+        return;
+      }
+
+      // 整理資料：空白名稱直接過濾掉
+      const normalizedRows = rows
+        .map((row) => ({
+          name: String(row["商品名稱"] || "").trim(),
+          sku: String(row["SKU"] || "").trim(),
+          barcode: String(row["條碼"] || "").trim(),
+          image_url: String(row["圖片網址"] || "").trim(),
+        }))
+        .filter((row) => row.name !== "");
+
+      if (normalizedRows.length === 0) {
+        alert("Excel 裡沒有可匯入的商品名稱");
+        return;
+      }
+
+      // 先抓現有商品，避免每列都打資料庫
+      const { data: existingItems, error: fetchError } = await supabase
+        .from("items")
+        .select("id, name, sku, barcode, image_url");
+
+      if (fetchError) {
+        console.error("讀取既有商品失敗：", fetchError);
+        alert("讀取既有商品失敗");
+        return;
+      }
+
+      const existing = (existingItems as Item[]) || [];
+
+      const updates: {
+        id: string;
+        name: string;
+        sku: string | null;
+        barcode: string | null;
+        image_url: string | null;
+      }[] = [];
+
+      const inserts: {
+        name: string;
+        sku: string | null;
+        barcode: string | null;
+        image_url: string | null;
+      }[] = [];
+
+      for (const row of normalizedRows) {
+        // 比對規則：
+        // 1. 有 SKU → 用 SKU 找
+        // 2. 沒 SKU → 用 name 找
+        let matchedItem: Item | undefined;
+
+        if (row.sku) {
+          matchedItem = existing.find(
+            (item) => (item.sku || "").trim() === row.sku,
+          );
+        } else {
+          matchedItem = existing.find(
+            (item) => (item.name || "").trim() === row.name,
+          );
+        }
+
+        if (matchedItem) {
+          // 更新成 Excel 的資料為主
+          updates.push({
+            id: matchedItem.id,
+            name: row.name,
+            sku: row.sku || null,
+            barcode: row.barcode || null,
+            image_url: row.image_url || null,
+          });
+        } else {
+          inserts.push({
+            name: row.name,
+            sku: row.sku || null,
+            barcode: row.barcode || null,
+            image_url: row.image_url || null,
+          });
+        }
+      }
+
+      // 先跑更新
+      for (const row of updates) {
+        const { error } = await supabase
+          .from("items")
+          .update({
+            name: row.name,
+            sku: row.sku,
+            barcode: row.barcode,
+            image_url: row.image_url,
+          })
+          .eq("id", row.id);
+
+        if (error) {
+          console.error("更新 Excel 商品失敗：", row, error);
+        }
+      }
+
+      // 再跑新增
+      if (inserts.length > 0) {
+        const { error } = await supabase.from("items").insert(inserts);
+
+        if (error) {
+          console.error("新增 Excel 商品失敗：", error);
+          alert("Excel 匯入失敗");
+          return;
+        }
+      }
+
+      alert(
+        `Excel 匯入完成：更新 ${updates.length} 筆，新增 ${inserts.length} 筆`,
+      );
+
+      // 清空 input，避免選同一個檔案時不觸發 onChange
+      if (fileInputRef.current) {
+        fileInputRef.current.value = "";
+      }
+
+      fetchItems();
+    } catch (err) {
+      console.error("Excel 解析失敗：", err);
+      alert("Excel 解析失敗，請確認欄位名稱是否正確");
+    }
+  }
+
+  /* =========================
+     搜尋過濾
+  ========================= */
+  const filteredItems = useMemo(() => {
+    const keyword = searchText.trim().toLowerCase();
+    if (!keyword) return items;
+
+    return items.filter((item) => {
+      const name = (item.name || "").toLowerCase();
+      const skuText = (item.sku || "").toLowerCase();
+      const barcodeText = (item.barcode || "").toLowerCase();
+
+      return (
+        name.includes(keyword) ||
+        skuText.includes(keyword) ||
+        barcodeText.includes(keyword)
+      );
+    });
+  }, [items, searchText]);
+
   return (
-    <div
-      style={{
-        padding: "20px",
-        backgroundColor: "#f4f7f9",
-        minHeight: "100vh",
-        fontFamily: "'Segoe UI', Roboto, sans-serif",
-      }}
-    >
-      <div
+    <div style={{ padding: "24px" }}>
+      {/* =========================
+          標題
+      ========================= */}
+      <h1
         style={{
-          maxWidth: "1200px",
-          margin: "0 auto",
-          backgroundColor: "#fff",
-          padding: isMobile ? "15px" : "30px",
-          borderRadius: "8px",
-          boxShadow: "0 2px 15px rgba(0,0,0,0.05)",
+          fontSize: isMobile ? "28px" : "40px",
+          marginBottom: "20px",
+          color: "#1e293b",
         }}
       >
-        {/* Header */}
-        <div style={{ marginBottom: "30px" }}>
-          <h2 style={{ color: "#888", fontSize: "14px", margin: "0" }}>
-            WAREHOUSE MANAGEMENT SYSTEM
-          </h2>
-          <h1 style={{ color: "#333", fontSize: "28px", margin: "5px 0 0 0" }}>
-            商品管理
-          </h1>
-        </div>
+        商品管理
+      </h1>
 
-        {/* 第一張圖的頂部數據統計 (Dashboard) */}
+      {/* =========================
+          上方：新增 / 編輯商品卡片
+      ========================= */}
+      <div
+        style={{
+          background: "#fff",
+          borderRadius: "18px",
+          padding: "24px",
+          boxShadow: "0 4px 12px rgba(0,0,0,0.08)",
+          marginBottom: "24px",
+        }}
+      >
+        <h2 style={{ marginTop: 0, marginBottom: "18px", color: "#334155" }}>
+          {editingId ? "編輯商品" : "新增商品"}
+        </h2>
+
         <div
           style={{
             display: "grid",
-            gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
-            gap: "20px",
+            gridTemplateColumns: isMobile ? "1fr" : "repeat(2, 1fr)",
+            gap: "16px",
           }}
         >
-          <div style={{ textAlign: "center" }}>
-            <div style={{ color: "#666", fontSize: "14px" }}>商品總數</div>
-            <div
-              style={{ color: "#007bff", fontSize: "32px", fontWeight: "bold" }}
-            >
-              {items.length}
-            </div>
-          </div>
-          <div style={{ textAlign: "center" }}>
-            <div style={{ color: "#666", fontSize: "14px" }}>庫存告警</div>
-            <div
-              style={{ color: "#ffc107", fontSize: "32px", fontWeight: "bold" }}
-            >
-              {items.filter((i) => (i.inventory?.[0]?.qty || 0) < 20).length}
-            </div>
-          </div>
-          <div style={{ textAlign: "center" }}>
-            <div style={{ color: "#666", fontSize: "14px" }}>庫存偏低</div>
-            <div
-              style={{ color: "#fd7e14", fontSize: "32px", fontWeight: "bold" }}
-            >
-              {
-                items.filter(
-                  (i) =>
-                    (i.inventory?.[0]?.qty || 0) > 0 &&
-                    (i.inventory?.[0]?.qty || 0) < 20,
-                ).length
-              }
-            </div>
-          </div>
-          <div style={{ textAlign: "center" }}>
-            <div style={{ color: "#666", fontSize: "14px" }}>缺貨</div>
-            <div
-              style={{ color: "#dc3545", fontSize: "32px", fontWeight: "bold" }}
-            >
-              {items.filter((i) => (i.inventory?.[0]?.qty || 0) === 0).length}
-            </div>
-          </div>
-        </div>
-
-        {/* 第二張圖的輸入表單區塊 */}
-        <div
-          style={{
-            padding: isMobile ? "15px" : "25px",
-            border: "1px solid #eee",
-            borderRadius: "8px",
-            backgroundColor: "#fafafa",
-            marginBottom: "30px",
-          }}
-        >
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
-              gap: "20px",
-              marginBottom: "20px",
-            }}
-          >
-            <div
-              style={{ display: "flex", flexDirection: "column", gap: "8px" }}
-            >
-              <label
-                style={{
-                  fontSize: "13px",
-                  fontWeight: "bold",
-                  color: "#555",
-                }}
-              >
-                🔍 關鍵字
-              </label>
-              <input
-                type="text"
-                placeholder="輸入名稱搜尋..."
-                value={searchText}
-                onChange={(e) => setSearchText(e.target.value)}
-                style={{
-                  padding: "10px",
-                  borderRadius: "4px",
-                  border: "1px solid #ccc",
-                }}
-              />
-            </div>
-
-            <div
-              style={{ display: "flex", flexDirection: "column", gap: "8px" }}
-            >
-              <label
-                style={{ fontSize: "13px", fontWeight: "bold", color: "#555" }}
-              >
-                🏷 商品名稱
-              </label>
-              <input
-                type="text"
-                placeholder="輸入名稱搜尋..."
-                value={itemName}
-                onChange={(e) => setItemName(e.target.value)}
-                style={{
-                  width: "100%",
-                  padding: "10px",
-                  borderRadius: "4px",
-                  border: "1px solid #ccc",
-                  boxSizing: "border-box",
-                }}
-              />
-            </div>
-
-            <div
-              style={{ display: "flex", flexDirection: "column", gap: "8px" }}
-            >
-              <label
-                style={{
-                  fontSize: "13px",
-                  fontWeight: "bold",
-                  color: "#555",
-                }}
-              >
-                🔢 SKU 編號
-              </label>
-              <input
-                type="text"
-                placeholder="請輸入SKU"
-                value={sku}
-                onChange={(e) => setSku(e.target.value)}
-                style={{
-                  padding: "10px",
-                  borderRadius: "4px",
-                  border: "1px solid #ccc",
-                }}
-              />
-            </div>
-
-            <div
-              style={{ display: "flex", flexDirection: "column", gap: "8px" }}
-            >
-              <label
-                style={{
-                  fontSize: "13px",
-                  fontWeight: "bold",
-                  color: "#555",
-                }}
-              >
-                📦 條碼
-              </label>
-              <input
-                type="text"
-                placeholder="請輸入條碼"
-                value={barcode}
-                onChange={(e) => setBarcode(e.target.value)}
-                style={{
-                  padding: "10px",
-                  borderRadius: "4px",
-                  border: "1px solid #ccc",
-                }}
-              />
-            </div>
-          </div>
-
-          {/* 按鈕區塊 */}
-          <div
-            style={{
-              display: "flex",
-              flexDirection: isMobile ? "column" : "row",
-              alignItems: "center",
-              gap: "15px",
-            }}
-          >
-            <button
-              onClick={() => document.getElementById("image-upload")?.click()}
+          <div>
+            <p style={{ marginBottom: "8px", fontWeight: 600 }}>商品名稱</p>
+            <input
+              value={itemName}
+              onChange={(e) => setItemName(e.target.value)}
+              placeholder="例如：紙板 / 膠帶 / RTX 5070 OC"
               style={{
-                width: isMobile ? "100%" : "auto",
-                padding: "10px 20px",
-                cursor: "pointer",
-                backgroundColor: "#8c8c8c",
-                color: "white",
-                border: "none",
-                borderRadius: "4px",
-              }}
-            >
-              📷 上傳圖片
-            </button>
-
-            <input
-              id="image-upload"
-              type="file"
-              accept="image/*"
-              style={{ display: "none" }}
-              onChange={(e) => {
-                if (e.target.files?.[0]) {
-                  const file = e.target.files[0];
-                  setImageFile(file);
-                  setPreviewUrl(URL.createObjectURL(file));
-                }
+                width: "100%",
+                padding: "12px",
+                borderRadius: "10px",
+                border: "1px solid #cbd5e1",
+                boxSizing: "border-box",
               }}
             />
+          </div>
 
-            {currentUser.role === "admin" && (
-              <button
-                onClick={() => document.getElementById("excel-upload")?.click()}
-                style={{
-                  padding: "10px 20px",
-                  cursor: "pointer",
-                  backgroundColor: "#00a8e8",
-                  color: "white",
-                  border: "none",
-                  borderRadius: "4px",
-                  width: isMobile ? "100%" : "auto",
-                }}
-              >
-                📥 Excel匯入
-              </button>
-            )}
-
+          <div>
+            <p style={{ marginBottom: "8px", fontWeight: 600 }}>SKU</p>
             <input
-              id="excel-upload"
-              type="file"
-              accept=".xlsx,.xls"
-              style={{ display: "none" }}
-              onChange={importExcel}
+              value={sku}
+              onChange={(e) => setSku(e.target.value)}
+              placeholder="例如：CB001"
+              style={{
+                width: "100%",
+                padding: "12px",
+                borderRadius: "10px",
+                border: "1px solid #cbd5e1",
+                boxSizing: "border-box",
+              }}
             />
+          </div>
 
-            {currentUser.role === "admin" && (
-              <button
-                onClick={editingId ? updateItem : addItem}
-                style={{
-                  padding: "10px 30px",
-                  cursor: "pointer",
-                  backgroundColor: editingId ? "#ffc107" : "#28a745",
-                  color: "white",
-                  border: "none",
-                  borderRadius: "4px",
-                  fontWeight: "bold",
-                  width: isMobile ? "100%" : "auto",
-                }}
-              >
-                {editingId ? "💾 更新商品" : "➕ 新增商品"}
-              </button>
-            )}
+          <div>
+            <p style={{ marginBottom: "8px", fontWeight: 600 }}>條碼</p>
+            <input
+              value={barcode}
+              onChange={(e) => setBarcode(e.target.value)}
+              placeholder="例如：4712345678901"
+              style={{
+                width: "100%",
+                padding: "12px",
+                borderRadius: "10px",
+                border: "1px solid #cbd5e1",
+                boxSizing: "border-box",
+              }}
+            />
+          </div>
+
+          <div>
+            <p style={{ marginBottom: "8px", fontWeight: 600 }}>圖片網址</p>
+            <input
+              value={imageUrl}
+              onChange={(e) => setImageUrl(e.target.value)}
+              placeholder="https://..."
+              style={{
+                width: "100%",
+                padding: "12px",
+                borderRadius: "10px",
+                border: "1px solid #cbd5e1",
+                boxSizing: "border-box",
+              }}
+            />
           </div>
         </div>
 
-        <hr
-          style={{ border: "0", borderTop: "1px solid #eee", margin: "20px 0" }}
-        />
-
-        {/* 第一張圖的表格樣式 */}
-        <div style={{ overflowX: "auto" }}>
-          <table style={{ width: "100%", borderCollapse: "collapse" }}>
-            <thead>
-              <tr style={{ backgroundColor: "#f8f9fa", color: "#4a5568" }}>
-                <th style={thStyle}>序號</th>
-                <th style={thStyle}>商品名稱</th>
-                <th style={thStyle}>SKU</th>
-                <th style={thStyle}>條碼</th>
-                <th style={thStyle}>庫位</th>
-                <th style={thStyle}>庫存數量</th>
-                <th style={thStyle}>狀態</th>
-                <th style={thStyle}>操作</th>
-              </tr>
-            </thead>
-            <tbody>
-              {items.map((item, index) => (
-                <tr key={item.id} style={{ borderBottom: "1px solid #eee" }}>
-                  <td style={tdStyle}>{String(index + 1).padStart(3, "0")}</td>
-                  <td style={tdStyle}>{item.name}</td>
-                  <td style={tdStyle}>{item.sku}</td>
-                  <td style={tdStyle}>{item.barcode}</td>
-                  <td style={tdStyle}>
-                    {item.inventory?.[0]?.slots?.slot_code || "-"}
-                  </td>
-                  <td style={tdStyle}>{item.inventory?.[0]?.qty || 0}</td>
-                  <td style={tdStyle}>
-                    <span
-                      style={{
-                        padding: "4px 10px",
-                        borderRadius: "20px",
-                        fontSize: "12px",
-                        border: "1px solid #ddd",
-                      }}
-                    >
-                      {(item.inventory?.[0]?.qty || 0) === 0
-                        ? "🔴缺貨"
-                        : (item.inventory?.[0]?.qty || 0) < 20
-                          ? "🟠偏低"
-                          : "🟢正常"}
-                    </span>
-                  </td>
-                  <td style={{ ...tdStyle, textAlign: "center" }}>
-                    <div
-                      style={{
-                        display: "flex",
-                        gap: "8px",
-                        justifyContent: "center",
-                      }}
-                    >
-                      <button
-                        onClick={() => stockIn(item)}
-                        style={btnActionStyle}
-                      >
-                        入庫
-                      </button>
-                      <button
-                        onClick={() => stockOut(item)}
-                        style={{
-                          ...btnActionStyle,
-                          backgroundColor: "#dc3545",
-                        }}
-                      >
-                        出庫
-                      </button>
-                      {currentUser.role === "admin" && (
-                        <>
-                          <button
-                            onClick={() => editItem(item)}
-                            style={{
-                              ...btnActionStyle,
-                              backgroundColor: "#0d6efd",
-                            }}
-                          >
-                            編輯
-                          </button>
-                          <button
-                            onClick={() => deleteItem(item.id)}
-                            style={{
-                              ...btnActionStyle,
-                              backgroundColor: "#6c757d",
-                            }}
-                          >
-                            刪除
-                          </button>
-                        </>
-                      )}
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        {/* 圖片預覽 */}
+        {imageUrl.trim() && (
+          <div style={{ marginTop: "20px" }}>
+            <p style={{ marginBottom: "8px", fontWeight: 600 }}>圖片預覽</p>
+            <img
+              src={imageUrl}
+              alt="商品預覽"
+              style={{
+                width: "180px",
+                height: "180px",
+                objectFit: "cover",
+                borderRadius: "14px",
+                border: "1px solid #e5e7eb",
+                background: "#f8fafc",
+              }}
+            />
+          </div>
+        )}
 
         <div
           style={{
             marginTop: "20px",
-            color: "#999",
-            fontSize: "12px",
-            textAlign: "right",
+            display: "flex",
+            flexWrap: "wrap",
+            gap: "12px",
           }}
         >
-          最後更新：{new Date().toLocaleString()} | 頁碼 1 /{" "}
-          {Math.ceil(items.length / 10)}
+          <button
+            onClick={addOrUpdateItem}
+            style={{
+              background: editingId ? "#f59e0b" : "#2563eb",
+              color: "#fff",
+              border: "none",
+              padding: "12px 20px",
+              borderRadius: "10px",
+              cursor: "pointer",
+              fontWeight: 600,
+            }}
+          >
+            {editingId ? "更新商品" : "新增商品"}
+          </button>
+
+          {editingId && (
+            <button
+              onClick={resetForm}
+              style={{
+                background: "#64748b",
+                color: "#fff",
+                border: "none",
+                padding: "12px 20px",
+                borderRadius: "10px",
+                cursor: "pointer",
+                fontWeight: 600,
+              }}
+            >
+              取消編輯
+            </button>
+          )}
         </div>
+      </div>
+
+      {/* =========================
+          Excel 匯入 + 搜尋
+      ========================= */}
+      <div
+        style={{
+          background: "#fff",
+          borderRadius: "18px",
+          padding: "20px",
+          boxShadow: "0 4px 12px rgba(0,0,0,0.08)",
+          marginBottom: "24px",
+        }}
+      >
+        <h2 style={{ marginTop: 0, marginBottom: "18px", color: "#334155" }}>
+          商品工具
+        </h2>
+
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr",
+            gap: "16px",
+          }}
+        >
+          {/* 搜尋 */}
+          <div>
+            <p style={{ marginBottom: "8px", fontWeight: 600 }}>
+              搜尋商品（名稱 / SKU / 條碼）
+            </p>
+            <input
+              value={searchText}
+              onChange={(e) => setSearchText(e.target.value)}
+              placeholder="輸入關鍵字搜尋..."
+              style={{
+                width: "100%",
+                padding: "12px",
+                borderRadius: "10px",
+                border: "1px solid #cbd5e1",
+                boxSizing: "border-box",
+              }}
+            />
+          </div>
+
+          {/* Excel 匯入 */}
+          <div>
+            <p style={{ marginBottom: "8px", fontWeight: 600 }}>
+              Excel 匯入商品
+            </p>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept=".xlsx,.xls"
+              onChange={importExcel}
+              style={{
+                width: "100%",
+                padding: "10px",
+                borderRadius: "10px",
+                border: "1px solid #cbd5e1",
+                background: "#fff",
+                boxSizing: "border-box",
+              }}
+            />
+            <p style={{ marginTop: "8px", color: "#64748b", fontSize: "13px" }}>
+              Excel 欄位建議：商品名稱 / SKU / 條碼 / 圖片網址
+            </p>
+          </div>
+        </div>
+      </div>
+
+      {/* =========================
+          商品列表
+      ========================= */}
+      <div
+        style={{
+          background: "#fff",
+          borderRadius: "18px",
+          padding: "20px",
+          boxShadow: "0 4px 12px rgba(0,0,0,0.08)",
+        }}
+      >
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            marginBottom: "18px",
+            flexWrap: "wrap",
+            gap: "12px",
+          }}
+        >
+          <h2 style={{ margin: 0, color: "#334155" }}>商品列表</h2>
+          <span style={{ color: "#64748b" }}>共 {filteredItems.length} 筆</span>
+        </div>
+
+        {loading ? (
+          <p>讀取中...</p>
+        ) : filteredItems.length === 0 ? (
+          <p style={{ color: "#64748b" }}>目前沒有符合條件的商品</p>
+        ) : (
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: isMobile ? "1fr" : "repeat(2, 1fr)",
+              gap: "16px",
+            }}
+          >
+            {filteredItems.map((item) => (
+              <div
+                key={item.id}
+                style={{
+                  border: "1px solid #e5e7eb",
+                  borderRadius: "16px",
+                  padding: "16px",
+                  background: "#f8fafc",
+                  display: "flex",
+                  gap: "14px",
+                  alignItems: "flex-start",
+                }}
+              >
+                {/* 左：圖片 */}
+                <div
+                  style={{
+                    width: "92px",
+                    minWidth: "92px",
+                    height: "92px",
+                    borderRadius: "14px",
+                    overflow: "hidden",
+                    background: "#fff",
+                    border: "1px solid #e5e7eb",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                  }}
+                >
+                  {item.image_url ? (
+                    <img
+                      src={item.image_url}
+                      alt={item.name}
+                      style={{
+                        width: "100%",
+                        height: "100%",
+                        objectFit: "cover",
+                      }}
+                    />
+                  ) : (
+                    <span style={{ color: "#94a3b8", fontSize: "13px" }}>
+                      無圖片
+                    </span>
+                  )}
+                </div>
+
+                {/* 右：資訊 */}
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div
+                    style={{
+                      fontSize: "18px",
+                      fontWeight: 700,
+                      color: "#1e293b",
+                      marginBottom: "10px",
+                      wordBreak: "break-word",
+                    }}
+                  >
+                    {item.name || "未命名商品"}
+                  </div>
+
+                  <div style={{ color: "#64748b", fontSize: "14px" }}>
+                    <div style={{ marginBottom: "6px" }}>
+                      SKU：{item.sku || "-"}
+                    </div>
+                    <div style={{ marginBottom: "6px" }}>
+                      條碼：{item.barcode || "-"}
+                    </div>
+                    <div>ID：{item.id}</div>
+                  </div>
+
+                  <div
+                    style={{
+                      marginTop: "14px",
+                      display: "flex",
+                      gap: "10px",
+                      flexWrap: "wrap",
+                    }}
+                  >
+                    <button
+                      onClick={() => startEdit(item)}
+                      style={{
+                        background: "#f59e0b",
+                        color: "#fff",
+                        border: "none",
+                        padding: "8px 14px",
+                        borderRadius: "8px",
+                        cursor: "pointer",
+                        fontWeight: 600,
+                      }}
+                    >
+                      編輯
+                    </button>
+
+                    <button
+                      onClick={() => deleteItem(item.id, item.name)}
+                      style={{
+                        background: "#ef4444",
+                        color: "#fff",
+                        border: "none",
+                        padding: "8px 14px",
+                        borderRadius: "8px",
+                        cursor: "pointer",
+                        fontWeight: 600,
+                      }}
+                    >
+                      刪除
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );
 }
-
-// 樣式定義
-const thStyle: React.CSSProperties = {
-  padding: "12px",
-  textAlign: "left",
-  fontWeight: "bold",
-  borderBottom: "2px solid #eee",
-};
-
-const tdStyle: React.CSSProperties = {
-  padding: "12px",
-  color: "#333",
-  fontSize: "14px",
-};
-
-const btnActionStyle: React.CSSProperties = {
-  padding: "5px 10px",
-  fontSize: "12px",
-  cursor: "pointer",
-  border: "none",
-  borderRadius: "4px",
-  color: "white",
-  backgroundColor: "#28a745",
-};
 
 export default Items;
