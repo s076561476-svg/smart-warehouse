@@ -1,153 +1,249 @@
 // =========================
 // React 功能
 // =========================
-
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 // =========================
 // Supabase 連線
 // =========================
-
 import { supabase } from "../services/supabase";
+
+// =========================
+// 型別定義
+// =========================
+type Item = {
+  id: string;
+  name: string;
+};
+
+type Slot = {
+  id: string;
+  slot_code: string;
+};
+
+type InventoryRow = {
+  id: string;
+  item_id: string;
+  slot_id: string;
+  qty: number;
+  items?:
+    | {
+        name: string;
+      }[]
+    | null;
+};
+
+type SlotOverview = {
+  id: string;
+  slot_code: string;
+  inventory: {
+    item_id: string;
+    qty: number;
+    item_name: string;
+  }[];
+};
 
 function StockIn() {
   // =========================
-  // 商品清單
-  // 用來放資料庫中的商品
+  // 商品 / 儲位 / 庫存資料
   // =========================
-
-  const [items, setItems] = useState<any[]>([]);
-
-  // =========================
-  // 儲位清單
-  // 用來放資料庫中的儲位
-  // =========================
-
-  const [slots, setSlots] = useState<any[]>([]);
+  const [items, setItems] = useState<Item[]>([]);
+  const [slots, setSlots] = useState<Slot[]>([]);
+  const [inventoryList, setInventoryList] = useState<InventoryRow[]>([]);
 
   // =========================
-  // 使用者選擇的商品
+  // 表單狀態
   // =========================
-
   const [itemId, setItemId] = useState("");
-
-  // =========================
-  // 使用者選擇的儲位
-  // =========================
-
   const [slotId, setSlotId] = useState("");
-
-  // =========================
-  // 異動數量
-  // =========================
-
   const [qty, setQty] = useState(0);
-
-  // =========================
-  // 異動類型
-  // STOCK_IN = 入庫
-  // STOCK_OUT = 出庫
-  // =========================
-
   const [action, setAction] = useState("STOCK_IN");
-  const selectedItem = items.find((item) => item.id === itemId);
 
-  const selectedSlot = slots.find((slot) => slot.id === slotId);
-
-  const estimatedQty = action === "STOCK_IN" ? qty : -qty;
   const isMobile = window.innerWidth < 768;
 
   // =========================
-  // 頁面開啟時執行
+  // 頁面載入
   // =========================
-
   useEffect(() => {
     fetchData();
   }, []);
 
   // =========================
-  // 讀取商品與儲位資料
+  // 讀取資料
   // =========================
-
   async function fetchData() {
-    const { data: itemData } = await supabase.from("items").select("*");
+    // 商品
+    const { data: itemData, error: itemError } = await supabase
+      .from("items")
+      .select("*")
+      .order("id", { ascending: true });
 
-    const { data: slotData } = await supabase.from("slots").select("*");
+    if (itemError) {
+      console.error("讀取商品失敗：", itemError);
+    }
 
-    setItems(itemData || []);
-    setSlots(slotData || []);
+    // 儲位
+    const { data: slotData, error: slotError } = await supabase
+      .from("slots")
+      .select("*")
+      .order("slot_code", { ascending: true });
+
+    if (slotError) {
+      console.error("讀取儲位失敗：", slotError);
+    }
+
+    // 庫存（含商品名稱）
+    const { data: inventoryData, error: inventoryError } = await supabase
+      .from("inventory")
+      .select(
+        `
+        id,
+        item_id,
+        slot_id,
+        qty,
+        items (
+          name
+        )
+      `,
+      )
+      .order("slot_id", { ascending: true });
+
+    if (inventoryError) {
+      console.error("讀取庫存失敗：", inventoryError);
+    }
+
+    setItems((itemData as Item[]) || []);
+    setSlots((slotData as Slot[]) || []);
+    setInventoryList((inventoryData as InventoryRow[]) || []);
   }
+
+  // =========================
+  // 目前選到的商品 / 儲位
+  // =========================
+  const selectedItem = items.find((item) => String(item.id) === String(itemId));
+  const selectedSlot = slots.find((slot) => String(slot.id) === String(slotId));
+
+  // =========================
+  // 查詢目前這個「商品 + 儲位」的現有庫存
+  // =========================
+  const currentInventory = inventoryList.find(
+    (row) =>
+      String(row.item_id) === String(itemId) &&
+      String(row.slot_id) === String(slotId),
+  );
+
+  // =========================
+  // 異動後數量（真實預覽）
+  // =========================
+  const estimatedQty = useMemo(() => {
+    const currentQty = currentInventory?.qty || 0;
+
+    if (!itemId || !slotId || qty <= 0) return currentQty;
+
+    if (action === "STOCK_IN") {
+      return currentQty + qty;
+    }
+
+    return currentQty - qty;
+  }, [action, qty, itemId, slotId, currentInventory]);
+
+  // =========================
+  // 組出「儲位概況」資料
+  // 每個儲位底下帶 inventory 清單
+  // =========================
+  const slotOverview: SlotOverview[] = useMemo(() => {
+    return slots.map((slot) => {
+      const slotInventory = inventoryList
+        .filter((inv) => String(inv.slot_id) === String(slot.id))
+        .map((inv) => ({
+          item_id: inv.item_id,
+          qty: inv.qty,
+          item_name: inv.items?.[0]?.name || "未命名商品",
+        }));
+
+      return {
+        id: slot.id,
+        slot_code: slot.slot_code,
+        inventory: slotInventory,
+      };
+    });
+  }, [slots, inventoryList]);
 
   // =========================
   // 執行庫存異動
   // =========================
-
   async function stockIn() {
     // 檢查資料是否完整
-
     if (!itemId || !slotId || qty <= 0) {
       alert("請完整輸入資料");
       return;
     }
 
-    // =========================
     // 查詢目前庫存
-    // =========================
-
-    const { data: existing } = await supabase
+    const { data: existing, error: existingError } = await supabase
       .from("inventory")
       .select("*")
       .eq("item_id", itemId)
       .eq("slot_id", slotId)
       .maybeSingle();
 
+    if (existingError) {
+      console.error("查詢庫存失敗：", existingError);
+      alert("查詢庫存失敗");
+      return;
+    }
+
     // =========================
     // 如果庫存已存在
     // =========================
-
     if (existing) {
       // 出庫前檢查庫存是否足夠
-
       if (action === "STOCK_OUT" && existing.qty < qty) {
         alert("庫存不足");
         return;
       }
 
-      // 更新庫存數量
+      const newQty =
+        action === "STOCK_IN" ? existing.qty + qty : existing.qty - qty;
 
-      await supabase
+      const { error: updateError } = await supabase
         .from("inventory")
-        .update({
-          qty: action === "STOCK_IN" ? existing.qty + qty : existing.qty - qty,
-        })
+        .update({ qty: newQty })
         .eq("id", existing.id);
+
+      if (updateError) {
+        console.error("更新庫存失敗：", updateError);
+        alert("更新庫存失敗");
+        return;
+      }
     } else {
       // =========================
       // 沒有庫存資料
       // =========================
-
       if (action === "STOCK_OUT") {
         alert("沒有庫存可出庫");
         return;
       }
 
-      // 建立新庫存
-
-      await supabase.from("inventory").insert([
+      const { error: insertError } = await supabase.from("inventory").insert([
         {
           item_id: itemId,
           slot_id: slotId,
           qty: qty,
         },
       ]);
+
+      if (insertError) {
+        console.error("建立庫存失敗：", insertError);
+        alert("建立庫存失敗");
+        return;
+      }
     }
 
     // =========================
     // 寫入異動紀錄
-    // stock_logs
     // =========================
-
-    const { error } = await supabase.from("stock_logs").insert([
+    const { error: logError } = await supabase.from("stock_logs").insert([
       {
         item_id: itemId,
         slot_id: slotId,
@@ -156,19 +252,27 @@ function StockIn() {
       },
     ]);
 
-    if (error) {
-      console.error(error);
-      alert(error.message);
+    if (logError) {
+      console.error("寫入異動紀錄失敗：", logError);
+      alert(logError.message);
       return;
     }
 
     alert("異動成功");
+
+    // 清空表單
+    setItemId("");
+    setSlotId("");
+    setQty(0);
+    setAction("STOCK_IN");
+
+    // 重新抓最新資料，讓下方儲位概況同步更新
+    fetchData();
   }
 
   // =========================
   // 畫面區
   // =========================
-
   return (
     <div style={{ padding: "30px" }}>
       <h1>庫存異動</h1>
@@ -222,7 +326,7 @@ function StockIn() {
         </div>
       </div>
 
-      {/* ✅ 左右兩欄：表單 + 異動預覽 */}
+      {/* 左右兩欄：表單 + 異動預覽 */}
       <div
         style={{
           display: "grid",
@@ -322,6 +426,7 @@ function StockIn() {
           <p>商品：{selectedItem?.name || "-"}</p>
           <p>儲位：{selectedSlot?.slot_code || "-"}</p>
           <p>異動類型：{action === "STOCK_IN" ? "入庫" : "出庫"}</p>
+          <p>目前庫存：{currentInventory?.qty || 0}</p>
           <p>異動數量：{qty}</p>
           <p>異動後：{estimatedQty}</p>
         </div>
@@ -339,18 +444,73 @@ function StockIn() {
           marginTop: "20px",
         }}
       >
-        {slots.map((slot) => (
+        {slotOverview.map((slot) => (
           <div
             key={slot.id}
             style={{
               border: "1px solid #ddd",
-              borderRadius: "10px",
-              padding: "15px",
-              textAlign: "center",
+              borderRadius: "14px",
+              padding: "18px",
               background: "#fff",
+              minHeight: "180px",
             }}
           >
-            {slot.slot_code}
+            <h3
+              style={{
+                margin: "0 0 12px 0",
+                textAlign: "center",
+                fontSize: "28px",
+                color: "#6d6780",
+              }}
+            >
+              {slot.slot_code}
+            </h3>
+
+            {slot.inventory.length === 0 ? (
+              <p
+                style={{
+                  textAlign: "center",
+                  color: "#9ca3af",
+                  marginTop: "40px",
+                }}
+              >
+                目前無庫存
+              </p>
+            ) : (
+              slot.inventory.map((inv, index) => (
+                <div
+                  key={`${slot.id}-${inv.item_id}-${index}`}
+                  style={{
+                    marginBottom: "14px",
+                    textAlign: "center",
+                    borderBottom:
+                      index !== slot.inventory.length - 1
+                        ? "1px dashed #e5e7eb"
+                        : "none",
+                    paddingBottom:
+                      index !== slot.inventory.length - 1 ? "10px" : "0",
+                  }}
+                >
+                  <div
+                    style={{
+                      fontWeight: 700,
+                      fontSize: "20px",
+                      marginBottom: "4px",
+                    }}
+                  >
+                    {inv.item_name}
+                  </div>
+                  <div
+                    style={{
+                      color: "#6b7280",
+                      fontSize: "16px",
+                    }}
+                  >
+                    數量：{inv.qty}
+                  </div>
+                </div>
+              ))
+            )}
           </div>
         ))}
       </div>
