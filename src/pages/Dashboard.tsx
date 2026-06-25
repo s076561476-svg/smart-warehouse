@@ -7,9 +7,11 @@ type SlotOverview = {
   inventory:
     | {
         qty: number;
-        items: {
-          name: string;
-        } | null;
+        items:
+          | {
+              name: string;
+            }[]
+          | null;
       }[]
     | null;
 };
@@ -276,7 +278,7 @@ function Dashboard() {
                         color: "#111827",
                       }}
                     >
-                      {inv.items?.name || "未命名商品"}
+                      {inv.items?.[0]?.name || "未命名商品"}
                     </div>
                     <div
                       style={{
