@@ -1,6 +1,26 @@
 import { useEffect, useState } from "react";
 import { supabase } from "../services/supabase";
 
+// 低庫存資料型別
+type LowStockItem = {
+  qty: number;
+  items:
+    | {
+        name: string;
+      }[]
+    | null;
+};
+
+// 庫存分布圖資料型別
+type StockChartItem = {
+  qty: number;
+  items:
+    | {
+        name: string;
+      }[]
+    | null;
+};
+
 function Dashboard() {
   const [itemCount, setItemCount] = useState(0);
   const [inventoryCount, setInventoryCount] = useState(0);
@@ -8,35 +28,39 @@ function Dashboard() {
   const [todayIn, setTodayIn] = useState(0);
   const [todayOut, setTodayOut] = useState(0);
 
-  const [lowStockItems, setLowStockItems] = useState<any[]>([]);
-  const [stockChart, setStockChart] = useState<any[]>([]);
+  const [lowStockItems, setLowStockItems] = useState<LowStockItem[]>([]);
+  const [stockChart, setStockChart] = useState<StockChartItem[]>([]);
 
   useEffect(() => {
     loadDashboard();
   }, []);
 
   async function loadDashboard() {
-    // 商品數量
+    // 1. 商品總數
     const { count: itemTotal } = await supabase
       .from("items")
       .select("*", { count: "exact", head: true });
 
-    // 庫存筆數
+    // 2. 庫存筆數
     const { count: inventoryTotal } = await supabase
       .from("inventory")
       .select("*", { count: "exact", head: true });
 
-    // 總庫存
+    // 3. 總庫存量
     const { data: inventoryData } = await supabase
       .from("inventory")
       .select("qty");
 
-    const qtySum = inventoryData?.reduce((sum, item) => sum + item.qty, 0) || 0;
+    const qtySum =
+      inventoryData?.reduce((sum, item) => sum + (item.qty || 0), 0) || 0;
 
-    // 累計入庫
-    const { data: logs } = await supabase.from("stock_logs").select("*");
+    // 4. 今日日期
     const today = new Date().toISOString().split("T")[0];
 
+    // 5. 異動紀錄
+    const { data: logs } = await supabase.from("stock_logs").select("*");
+
+    // 今日入庫
     const inQty =
       logs
         ?.filter(
@@ -44,7 +68,8 @@ function Dashboard() {
             x.action === "STOCK_IN" && x.created_at?.split("T")[0] === today,
         )
         .reduce((sum, x) => sum + x.qty, 0) || 0;
-    // 累計出庫
+
+    // 今日出庫
     const outQty =
       logs
         ?.filter(
@@ -53,8 +78,8 @@ function Dashboard() {
         )
         .reduce((sum, x) => sum + x.qty, 0) || 0;
 
-    // 低庫存
-    const { data: lowStock } = await supabase
+    // 6. 低庫存商品
+    const { data: lowStock, error: lowStockError } = await supabase
       .from("inventory")
       .select(
         `
@@ -66,23 +91,34 @@ function Dashboard() {
       )
       .lt("qty", 20);
 
-    // 圖表資料
-    const { data: chartData } = await supabase.from("inventory").select(`
+    if (lowStockError) {
+      console.error("讀取低庫存失敗：", lowStockError);
+    }
+
+    // 7. 庫存分布圖資料
+    const { data: chartData, error: chartError } = await supabase
+      .from("inventory")
+      .select(
+        `
         qty,
         items (
           name
         )
-      `);
+      `,
+      );
 
+    if (chartError) {
+      console.error("讀取庫存分布圖失敗：", chartError);
+    }
+
+    // 寫入 state
     setItemCount(itemTotal || 0);
     setInventoryCount(inventoryTotal || 0);
     setTotalQty(qtySum);
-
     setTodayIn(inQty);
     setTodayOut(outQty);
-
-    setLowStockItems(lowStock || []);
-    setStockChart(chartData || []);
+    setLowStockItems((lowStock as LowStockItem[]) || []);
+    setStockChart((chartData as StockChartItem[]) || []);
   }
 
   return (
@@ -90,10 +126,8 @@ function Dashboard() {
       <h1
         style={{
           fontSize: window.innerWidth < 768 ? "24px" : "42px",
-
           textAlign: "center",
           marginBottom: "20px",
-
           wordBreak: "break-word",
           lineHeight: "1.2",
         }}
@@ -129,6 +163,7 @@ function Dashboard() {
             border: "2px solid #ef4444",
             padding: "20px",
             borderRadius: "10px",
+            textAlign: "center",
           }}
         >
           <h2>今日出庫</h2>
@@ -140,6 +175,7 @@ function Dashboard() {
             border: "2px solid #2563eb",
             padding: "20px",
             borderRadius: "10px",
+            textAlign: "center",
           }}
         >
           <h2>商品總數</h2>
@@ -151,6 +187,7 @@ function Dashboard() {
             border: "2px solid #16a34a",
             padding: "20px",
             borderRadius: "10px",
+            textAlign: "center",
           }}
         >
           <h2>庫存筆數</h2>
@@ -162,6 +199,7 @@ function Dashboard() {
             border: "2px solid #f59e0b",
             padding: "20px",
             borderRadius: "10px",
+            textAlign: "center",
           }}
         >
           <h2>總庫存量</h2>
@@ -186,8 +224,7 @@ function Dashboard() {
               backgroundColor: "#fff5f5",
             }}
           >
-            <strong>{item.items?.name}</strong>
-
+            <strong>{item.items?.[0]?.name || "未命名商品"}</strong>
             <p>庫存只剩：{item.qty}</p>
           </div>
         ))
@@ -216,8 +253,7 @@ function Dashboard() {
                 marginBottom: "5px",
               }}
             >
-              <span>{item.items?.name}</span>
-
+              <span>{item.items?.[0]?.name || "未命名商品"}</span>
               <span>{item.qty}</span>
             </div>
 
