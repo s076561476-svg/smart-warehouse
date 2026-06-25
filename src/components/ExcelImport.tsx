@@ -2,21 +2,22 @@ import { useState } from "react";
 import * as XLSX from "xlsx";
 import { supabase } from "../services/supabase";
 
-// =========================
-// Excel 每列資料型別
-// =========================
+type ExcelImportProps = {
+  onImportSuccess?: () => void;
+};
+
 type ExcelRow = {
   商品名稱?: string;
   儲位編號?: string;
-  數量?: number | string;
+  數量?: string | number;
 };
 
-function ExcelImport() {
+function ExcelImport({ onImportSuccess }: ExcelImportProps) {
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState("");
 
-  async function handleFileUpload(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
+  async function handleFileUpload(event: React.ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
     if (!file) return;
 
     setLoading(true);
@@ -24,69 +25,68 @@ function ExcelImport() {
 
     try {
       // =========================
-      // 1. 讀取 Excel 檔案
+      // 1. 讀取 Excel
       // =========================
       const data = await file.arrayBuffer();
-      const workbook = XLSX.read(data);
+      const workbook = XLSX.read(data, { type: "array" });
       const sheetName = workbook.SheetNames[0];
       const worksheet = workbook.Sheets[sheetName];
 
-      // 把 Excel 轉成 JSON
-      const jsonData: ExcelRow[] = XLSX.utils.sheet_to_json(worksheet);
+      const jsonData = XLSX.utils.sheet_to_json<ExcelRow>(worksheet);
 
-      if (!jsonData.length) {
+      if (!jsonData || jsonData.length === 0) {
         alert("Excel 沒有資料");
         setLoading(false);
         return;
       }
 
-      // 匯入結果統計
       let successCount = 0;
       let failCount = 0;
       const failMessages: string[] = [];
 
       // =========================
-      // 2. 一列一列處理 Excel 資料
+      // 2. 一列一列匯入
       // =========================
       for (let i = 0; i < jsonData.length; i++) {
         const row = jsonData[i];
 
         const itemName = String(row["商品名稱"] || "").trim();
         const slotCode = String(row["儲位編號"] || "").trim();
-        const qty = Number(row["數量"] || 0);
+        const qtyValue = row["數量"];
+        const qty =
+          qtyValue === undefined || qtyValue === null || qtyValue === ""
+            ? NaN
+            : Number(qtyValue);
 
-        // 基本檢查
-        if (!itemName || !slotCode || qty <= 0) {
+        // 商品名稱 / 儲位編號 / 數量 都必填
+        if (!itemName || !slotCode || Number.isNaN(qty)) {
           failCount++;
           failMessages.push(
-            `第 ${i + 2} 列資料不完整：商品名稱 / 儲位編號 / 數量 必須正確`,
+            `第 ${i + 2} 列資料不完整（需要：商品名稱 / 儲位編號 / 數量）`,
           );
           continue;
         }
 
         try {
           // =========================
-          // 3. 查商品是否存在
+          // 3. 先找商品
+          // 沒有就建立商品
           // =========================
           let itemId = "";
 
-          const { data: existingItem, error: itemFindError } = await supabase
+          const { data: existingItem, error: itemError } = await supabase
             .from("items")
             .select("id, name")
             .eq("name", itemName)
             .maybeSingle();
 
-          if (itemFindError) {
-            throw new Error(`查詢商品失敗：${itemFindError.message}`);
+          if (itemError) {
+            throw new Error(`查詢商品失敗：${itemError.message}`);
           }
 
           if (existingItem) {
-            // 商品已存在
             itemId = existingItem.id;
           } else {
-            // =========================
-            // 4. 商品不存在 -> 建立商品
-            // =========================
             const { data: newItem, error: insertItemError } = await supabase
               .from("items")
               .insert([
@@ -99,7 +99,7 @@ function ExcelImport() {
 
             if (insertItemError || !newItem) {
               throw new Error(
-                `建立商品失敗：${insertItemError?.message || "未知錯誤"}`,
+                `新增商品失敗：${insertItemError?.message || "未知錯誤"}`,
               );
             }
 
@@ -107,7 +107,7 @@ function ExcelImport() {
           }
 
           // =========================
-          // 5. 查儲位 slot_code
+          // 4. 找儲位
           // =========================
           const { data: slotData, error: slotError } = await supabase
             .from("slots")
@@ -126,10 +126,10 @@ function ExcelImport() {
           const slotId = slotData.id;
 
           // =========================
-          // 6. 查 inventory 是否已存在
-          //    條件：同商品 + 同儲位
+          // 5. 查 inventory 是否已存在
+          // 同一商品 + 同一儲位
           // =========================
-          const { data: existingInventory, error: inventoryFindError } =
+          const { data: existingInventory, error: inventoryError } =
             await supabase
               .from("inventory")
               .select("id, qty")
@@ -137,15 +137,12 @@ function ExcelImport() {
               .eq("slot_id", slotId)
               .maybeSingle();
 
-          if (inventoryFindError) {
-            throw new Error(`查詢庫存失敗：${inventoryFindError.message}`);
+          if (inventoryError) {
+            throw new Error(`查詢庫存失敗：${inventoryError.message}`);
           }
 
           if (existingInventory) {
-            // =========================
-            // 7A. 已存在 -> 更新數量
-            // 這裡先用「覆蓋數量」
-            // =========================
+            // 已有資料 → 更新數量
             const { error: updateError } = await supabase
               .from("inventory")
               .update({
@@ -157,9 +154,7 @@ function ExcelImport() {
               throw new Error(`更新庫存失敗：${updateError.message}`);
             }
           } else {
-            // =========================
-            // 7B. 不存在 -> 新增庫存
-            // =========================
+            // 沒有資料 → 新增
             const { error: insertInventoryError } = await supabase
               .from("inventory")
               .insert([
@@ -183,42 +178,58 @@ function ExcelImport() {
       }
 
       // =========================
-      // 8. 顯示匯入結果
+      // 6. 匯入結果
       // =========================
-      let resultMessage = `匯入完成！成功 ${successCount} 筆，失敗 ${failCount} 筆`;
+      let result = `匯入完成：成功 ${successCount} 筆，失敗 ${failCount} 筆`;
 
       if (failMessages.length > 0) {
-        resultMessage += "\n\n失敗原因：\n" + failMessages.join("\n");
+        result += "\n\n失敗原因：\n" + failMessages.join("\n");
       }
 
-      setMessage(resultMessage);
-      alert(resultMessage);
+      setMessage(result);
+      alert(result);
+
+      // 通知 Items 頁面刷新
+      if (onImportSuccess) {
+        onImportSuccess();
+      }
     } catch (error: any) {
       console.error(error);
-      alert("Excel 匯入失敗：" + error.message);
-      setMessage("Excel 匯入失敗：" + error.message);
+      const errorMessage = `Excel 匯入失敗：${error.message}`;
+      setMessage(errorMessage);
+      alert(errorMessage);
     } finally {
       setLoading(false);
-      e.target.value = "";
+      event.target.value = "";
     }
   }
 
   return (
     <div
       style={{
-        background: "white",
+        marginTop: "16px",
         padding: "20px",
+        background: "#fff",
         borderRadius: "16px",
         boxShadow: "0 4px 10px rgba(0,0,0,0.08)",
-        marginBottom: "20px",
       }}
     >
-      <h2>Excel 匯入商品 / 庫存</h2>
-      <p style={{ color: "#64748b", lineHeight: 1.8 }}>
-        Excel 欄位格式請使用：
-        <br />
-        <b>商品名稱 / 儲位編號 / 數量</b>
-      </p>
+      <h3 style={{ marginTop: 0 }}>Excel 匯入商品 / 庫存</h3>
+
+      <div
+        style={{
+          background: "#f8fafc",
+          borderRadius: "12px",
+          padding: "16px",
+          marginBottom: "16px",
+          lineHeight: 1.8,
+          color: "#475569",
+        }}
+      >
+        <div>Excel 欄位請使用：</div>
+        <strong>商品名稱 / 儲位編號 / 數量</strong>
+        <div style={{ marginTop: "6px" }}>範例：RTX 5070 OC / A-01-01 / 80</div>
+      </div>
 
       <input
         type="file"
@@ -238,8 +249,9 @@ function ExcelImport() {
             whiteSpace: "pre-wrap",
             background: "#f8fafc",
             padding: "12px",
-            borderRadius: "12px",
-            fontSize: "14px",
+            borderRadius: "10px",
+            fontSize: "13px",
+            lineHeight: 1.6,
           }}
         >
           {message}
