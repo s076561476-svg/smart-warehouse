@@ -1,6 +1,27 @@
 import { useEffect, useState } from "react";
 import { supabase } from "../services/supabase";
 
+// 低庫存資料型別
+type LowStockItem = {
+  qty: number;
+  items:
+    | {
+        name: string;
+      }[]
+    | null;
+};
+
+// 庫存分布圖資料型別
+type StockChartItem = {
+  qty: number;
+  items:
+    | {
+        name: string;
+      }[]
+    | null;
+};
+
+// 儲位概況資料型別
 type SlotOverview = {
   id: number;
   slot_code: string;
@@ -23,10 +44,8 @@ function Dashboard() {
   const [todayIn, setTodayIn] = useState(0);
   const [todayOut, setTodayOut] = useState(0);
 
-  const [lowStockItems, setLowStockItems] = useState<any[]>([]);
-  const [stockChart, setStockChart] = useState<any[]>([]);
-
-  // 新增：儲位概況資料
+  const [lowStockItems, setLowStockItems] = useState<LowStockItem[]>([]);
+  const [stockChart, setStockChart] = useState<StockChartItem[]>([]);
   const [slotOverview, setSlotOverview] = useState<SlotOverview[]>([]);
 
   useEffect(() => {
@@ -34,17 +53,17 @@ function Dashboard() {
   }, []);
 
   async function loadDashboard() {
-    // 商品數量
+    // 1. 商品總數
     const { count: itemTotal } = await supabase
       .from("items")
       .select("*", { count: "exact", head: true });
 
-    // 庫存筆數
+    // 2. 庫存筆數
     const { count: inventoryTotal } = await supabase
       .from("inventory")
       .select("*", { count: "exact", head: true });
 
-    // 總庫存
+    // 3. 總庫存量
     const { data: inventoryData } = await supabase
       .from("inventory")
       .select("qty");
@@ -52,10 +71,10 @@ function Dashboard() {
     const qtySum =
       inventoryData?.reduce((sum, item) => sum + (item.qty || 0), 0) || 0;
 
-    // 今日日期
+    // 4. 今日日期
     const today = new Date().toISOString().split("T")[0];
 
-    // 異動紀錄
+    // 5. 異動紀錄
     const { data: logs } = await supabase.from("stock_logs").select("*");
 
     // 今日入庫
@@ -76,8 +95,8 @@ function Dashboard() {
         )
         .reduce((sum, x) => sum + x.qty, 0) || 0;
 
-    // 低庫存
-    const { data: lowStock } = await supabase
+    // 6. 低庫存商品
+    const { data: lowStock, error: lowStockError } = await supabase
       .from("inventory")
       .select(
         `
@@ -89,16 +108,27 @@ function Dashboard() {
       )
       .lt("qty", 20);
 
-    // 圖表資料
-    const { data: chartData } = await supabase.from("inventory").select(`
-      qty,
-      items (
-        name
-      )
-    `);
+    if (lowStockError) {
+      console.error("讀取低庫存失敗：", lowStockError);
+    }
 
-    // ===== 新增：儲位概況 =====
-    // 會抓每個 slot 的庫存與商品名稱
+    // 7. 庫存分布圖資料
+    const { data: chartData, error: chartError } = await supabase
+      .from("inventory")
+      .select(
+        `
+        qty,
+        items (
+          name
+        )
+      `,
+      );
+
+    if (chartError) {
+      console.error("讀取庫存分布圖失敗：", chartError);
+    }
+
+    // 8. 儲位概況：抓每個儲位 + 該儲位庫存 + 商品名稱
     const { data: slotsData, error: slotsError } = await supabase
       .from("slots")
       .select(
@@ -119,15 +149,14 @@ function Dashboard() {
       console.error("讀取儲位概況失敗：", slotsError);
     }
 
+    // 寫入 state
     setItemCount(itemTotal || 0);
     setInventoryCount(inventoryTotal || 0);
     setTotalQty(qtySum);
-
     setTodayIn(inQty);
     setTodayOut(outQty);
-
-    setLowStockItems(lowStock || []);
-    setStockChart(chartData || []);
+    setLowStockItems((lowStock as LowStockItem[]) || []);
+    setStockChart((chartData as StockChartItem[]) || []);
     setSlotOverview((slotsData as SlotOverview[]) || []);
   }
 
@@ -266,7 +295,7 @@ function Dashboard() {
               {slot.slot_code}
             </div>
 
-            {/* 儲位內容 */}
+            {/* 儲位內商品 */}
             {slot.inventory && slot.inventory.length > 0 ? (
               <div style={{ width: "100%" }}>
                 {slot.inventory.map((inv, index) => (
@@ -323,7 +352,7 @@ function Dashboard() {
               backgroundColor: "#fff5f5",
             }}
           >
-            <strong>{item.items?.name}</strong>
+            <strong>{item.items?.[0]?.name || "未命名商品"}</strong>
             <p>庫存只剩：{item.qty}</p>
           </div>
         ))
@@ -352,7 +381,7 @@ function Dashboard() {
                 marginBottom: "5px",
               }}
             >
-              <span>{item.items?.name}</span>
+              <span>{item.items?.[0]?.name || "未命名商品"}</span>
               <span>{item.qty}</span>
             </div>
 
